@@ -42,9 +42,30 @@ Use the bundled scripts for repeated multi-command operations:
 6. Avoid interactive DBus methods such as `queryWindowInfo` unless the user expects a click/pick operation.
 7. For disruptive actions such as closing windows, sending keystrokes, moving displays, or changing DPMS, inspect first and state the exact action before doing it unless the user explicitly requested that action.
 
+## Launching Applications
+
+Launch GUI programs through `kde-session-env --`, detach anything that should become a visible independent window, then verify by window query and screenshot. A successful shell exit or a new process is not enough proof that KWin mapped a usable window.
+
+For shell builtins, aliases, or compound checks, wrap the command in a shell:
+
+```bash
+/path/to/kde-computer-use/scripts/kde-session-env -- sh -lc 'command -v kitty; command -v qdbus6'
+```
+
+For kitty, prefer `--detach` and a distinctive title when opening a fresh terminal from Codex:
+
+```bash
+/path/to/kde-computer-use/scripts/kde-session-env -- kitty --detach --title Codex-fastfetch sh -lc 'fastfetch; exec "${SHELL:-zsh}"'
+sleep 1
+/path/to/kde-computer-use/scripts/kde-window-info --title '^Codex-fastfetch$'
+/path/to/kde-computer-use/scripts/kde-screenshot --fullscreen --output /tmp/desktop.png
+```
+
 ## Failure Handling
 
 - If `qdbus6` cannot connect, run `scripts/kde-session-env` and confirm `/run/user/$(id -u)/bus` exists.
+- If a program launch appears to succeed but no window appears, retry with app-specific detach flags or `sh -lc 'setsid -f app ...'`, then verify with `kde-window-info` and a screenshot.
+- If `kde-session-env -- command -v ...` fails, remember `command` is a shell builtin; use `kde-session-env -- sh -lc 'command -v ...'`.
 - If a window is KWin-active but does not receive text, focus with `kde-focus-window --click` before `kde-type-text`.
 - If `ydotool` fails, check `systemctl --user status ydotool.service --no-pager` and fall back to KWin, `kdotool`, or global shortcuts.
 - If screenshots fail under Wayland, prefer Spectacle; do not default to wlroots-only tools such as `grim` on Plasma.

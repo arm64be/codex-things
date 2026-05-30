@@ -36,6 +36,38 @@ Common failures:
 - `Cannot autolaunch D-Bus without X11 $DISPLAY`: load `DBUS_SESSION_BUS_ADDRESS` from `kde-session-env`.
 - `Could not connect to display`: load `WAYLAND_DISPLAY` and `DISPLAY`, then retry through `kde-session-env --`.
 - Tools work in an interactive terminal but not from Codex: use the helper wrapper for every command in the sequence.
+- `kde-session-env -- command -v foo` fails: `command` is a shell builtin, not an executable. Use `kde-session-env -- sh -lc 'command -v foo'`.
+
+## Launching GUI Programs
+
+When a user asks to open an application, launch it inside the KDE session and verify that KWin mapped the expected window. Do not treat a zero exit status, launcher return, or `pgrep` result as proof that the visible desktop changed.
+
+General pattern:
+
+```bash
+scripts/kde-session-env -- sh -lc 'setsid -f app --args >/tmp/app-launch.log 2>&1'
+sleep 1
+scripts/kde-window-info --title 'distinctive-title|expected-window-title'
+scripts/kde-screenshot --fullscreen --output /tmp/desktop.png
+```
+
+For kitty specifically, use `--detach` and a unique title. Launching kitty without detaching from a background Codex command can appear to succeed while leaving no separately discoverable window, and broad class searches can return only an existing kitty window.
+
+```bash
+scripts/kde-session-env -- kitty --detach --title Codex-fastfetch sh -lc 'fastfetch; exec "${SHELL:-zsh}"'
+sleep 1
+scripts/kde-window-info --title '^Codex-fastfetch$'
+scripts/kde-screenshot --fullscreen --output /tmp/desktop.png
+```
+
+If the title search fails, inspect all likely windows before acting on the active one:
+
+```bash
+scripts/kde-session-env -- kdotool search --class 'kitty|konsole|org.kde.konsole' getwindowid getwindowname getwindowpid getwindowgeometry
+scripts/kde-session-env -- kdotool getactivewindow getwindowname getwindowclassname getwindowpid getwindowgeometry
+```
+
+Launchers such as `gtk-launch kitty.desktop` may return successfully without creating a new window if the desktop entry or application reuses an existing instance. Prefer direct application commands with explicit detach and title options when a fresh window matters.
 
 ## KWin DBus
 
