@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+section() {
+  printf '\n## %s\n' "$1"
+}
+
+first_line_version() {
+  local cmd="$1"
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    return
+  fi
+  printf '%-12s %s\n' "$cmd" "$("$cmd" --version 2>&1 | head -n 1 || true)"
+}
+
+section "Time"
+date -Is
+
+section "System"
+uname -a
+if command -v lscpu >/dev/null 2>&1; then
+  lscpu | sed -n '/^Architecture:/p;/^Model name:/p;/^CPU(s):/p;/^Thread(s) per core:/p;/^Core(s) per socket:/p;/^Socket(s):/p;/^CPU max MHz:/p;/^CPU min MHz:/p'
+fi
+if command -v nproc >/dev/null 2>&1; then
+  printf 'nproc: %s\n' "$(nproc)"
+fi
+if [[ -r /proc/loadavg ]]; then
+  printf 'loadavg: %s\n' "$(< /proc/loadavg)"
+fi
+if command -v free >/dev/null 2>&1; then
+  free -h
+fi
+
+section "Cgroup"
+if [[ -r /proc/self/cgroup ]]; then
+  sed -n '1,20p' /proc/self/cgroup
+fi
+for file in /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory.current; do
+  if [[ -r "$file" ]]; then
+    printf '%s: %s\n' "$file" "$(< "$file")"
+  fi
+done
+
+section "Repository"
+if command -v git >/dev/null 2>&1 && git rev-parse --show-toplevel >/dev/null 2>&1; then
+  printf 'root: %s\n' "$(git rev-parse --show-toplevel)"
+  printf 'head: %s\n' "$(git rev-parse --short HEAD 2>/dev/null || true)"
+  git status --short
+else
+  printf 'No git repository detected.\n'
+fi
+
+section "Tool Versions"
+for cmd in hyperfine perf python python3 node npm pnpm yarn bun deno go rustc cargo javac java mvn gradle dotnet ruby php gcc clang make cmake; do
+  first_line_version "$cmd"
+done

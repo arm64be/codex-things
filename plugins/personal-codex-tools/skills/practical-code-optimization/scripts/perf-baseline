@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+runs="10"
+warmups="1"
+name=""
+out_dir=""
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: perf-baseline [--runs N] [--warmups N] [--name NAME] [--out DIR] -- COMMAND [ARGS...]
+
+Run a command repeatedly, capture environment context, and write timing output.
+Uses hyperfine when available; otherwise falls back to /usr/bin/time plus wall
+clock measurements.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --runs)
+      runs="${2:-}"
+      [[ "$runs" =~ ^[1-9][0-9]*$ ]] || { usage; exit 2; }
+      shift 2
+      ;;
+    --warmups|--warmup)
+      warmups="${2:-}"
+      [[ "$warmups" =~ ^[0-9]+$ ]] || { usage; exit 2; }
+      shift 2
+      ;;
+    --name)
+      name="${2:-}"
+      [[ -n "$name" ]] || { usage; exit 2; }
+      shift 2
+      ;;
+    --out)
+      out_dir="${2:-}"
+      [[ -n "$out_dir" ]] || { usage; exit 2; }
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage
+      exit 2
+      ;;
+  esac
+done
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 2
+fi
+
+cmd=("$@")
+timestamp="$(date +%Y%m%d-%H%M%S)"
+if [[ -z "$name" ]]; then
+  name="$(basename -- "${cmd[0]}")"
+fi
+safe_name="$(printf '%s' "$name" | tr -cs 'A-Za-z0-9._-' '-')"
+if [[ -z "$out_dir" ]]; then
+  out_dir=".codex/perf/${timestamp}-${safe_name}"
+fi
+mkdir -p "$out_dir"
+
+{
+  printf 'command:'
+  printf ' %q' "${cmd[@]}"
+  printf '\n'
+  printf 'runs: %s\n' "$runs"
+  printf 'warmups: %s\n' "$warmups"
+} > "$out_dir/command.txt"
+
+"$script_dir/perf-env" > "$out_dir/environment.txt" 2>&1 || true
+
+printf 'Writing baseline to %s\n' "$out_dir"
+
+if command -v hyperfine >/dev/null 2>&1; then
+  cmd_string="$(printf '%q ' "${cmd[@]}")"
+  hyperfine \
+    --warmup "$warmups" \
+    --runs "$runs" \
+    --export-json "$out_dir/results.json" \
+    --export-markdown "$out_dir/results.md" \
+    --command-name "$name" \
+    "$cmd_string" | tee "$out_dir/hyperfine.txt"
+  exit 0
+fi
+
+time_bin=""
+if [[ -x /usr/bin/time ]]; then
+  time_bin="/usr/bin/time"
+elif command -v gtime >/dev/null 2>&1; then
+  time_bin="$(command -v gtime)"
+fi
+
+if [[ -z "$time_bin" ]]; then
+  printf 'hyperfine and GNU time are unavailable; recording wall-clock timing only.\n' | tee "$out_dir/timing-note.txt"
+fi
+
+for ((i = 1; i <= warmups; i++)); do
+  "${cmd[@]}" >"$out_dir/warmup-${i}.stdout" 2>"$out_dir/warmup-${i}.stderr" || true
+done
+
+printf 'run\tstatus\twall_ms\tmax_rss_kb\tuser_s\tsys_s\n' > "$out_dir/results.tsv"
+failed="0"
+
+for ((i = 1; i <= runs; i++)); do
+  time_file="$out_dir/time-${i}.txt"
+  stdout_file="$out_dir/stdout-${i}.txt"
+  stderr_file="$out_dir/stderr-${i}.txt"
+  start_ns="$(date +%s%N)"
+  set +e
+  if [[ -n "$time_bin" ]]; then
+    "$time_bin" -f 'max_rss_kb=%M\nuser_s=%U\nsys_s=%S' -o "$time_file" "${cmd[@]}" >"$stdout_file" 2>"$stderr_file"
+  else
+    "${cmd[@]}" >"$stdout_file" 2>"$stderr_file"
+    : > "$time_file"
+  fi
+  status="$?"
+  set -e
+  end_ns="$(date +%s%N)"
+  wall_ms="$(( (end_ns - start_ns) / 1000000 ))"
+  max_rss="$(sed -n 's/^max_rss_kb=//p' "$time_file")"
+  user_s="$(sed -n 's/^user_s=//p' "$time_file")"
+  sys_s="$(sed -n 's/^sys_s=//p' "$time_file")"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$i" "$status" "$wall_ms" "$max_rss" "$user_s" "$sys_s" | tee -a "$out_dir/results.tsv"
+  if [[ "$status" != "0" ]]; then
+    failed="1"
+  fi
+done
+
+if [[ "$failed" == "1" ]]; then
+  printf 'One or more measured runs failed. See %s.\n' "$out_dir" >&2
+  exit 1
+fi

@@ -1,0 +1,25 @@
+{
+  "name": "personal-codex-tools",
+  "version": "0.1.0",
+  "description": "Personal Codex skills and helper tools for desktop automation and practical performance work.",
+  "author": {
+    "name": "mel"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Personal Codex Tools",
+    "shortDescription": "KDE desktop automation and practical optimization skills.",
+    "longDescription": "A personal collection of Codex skills and bundled scripts for operating KDE Plasma sessions and optimizing real-world software with evidence from profiling, runtimes, compilers, and production-like environments.",
+    "developerName": "mel",
+    "category": "Productivity",
+    "capabilities": [
+      "Desktop automation",
+      "Profiling",
+      "Code optimization"
+    ],
+    "defaultPrompt": [
+      "Use $kde-computer-use to inspect this KDE desktop.",
+      "Use $practical-code-optimization to speed up this code."
+    ]
+  }
+}

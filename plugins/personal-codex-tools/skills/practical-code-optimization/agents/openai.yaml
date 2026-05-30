@@ -1,0 +1,4 @@
+interface:
+  display_name: "Practical Code Optimization"
+  short_description: "Profile and optimize real-world code paths"
+  default_prompt: "Use $practical-code-optimization to profile and speed up this code."
